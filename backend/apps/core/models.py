@@ -134,6 +134,13 @@ class OrderVersion(models.Model):
     clarification_question = models.TextField(blank=True)
     total = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     created_by_agent = models.CharField(max_length=32, blank=True)
+    # Snapshot serializado do OrderContext (agents/context.py) nesta versão:
+    # items (drafts), hints, resolvedItems, ambiguities, evidence e, quando
+    # aplicável, erpReceipt. OrderContext só existe em memória durante uma
+    # requisição (agents/context.py, docstring) — este campo é o que permite
+    # ao Order API (E7) reconstruir o contexto exato numa requisição seguinte
+    # (customer-reply, confirm, approve) sem reprocessar nada do zero.
+    context_snapshot = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
