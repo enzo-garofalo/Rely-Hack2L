@@ -127,7 +127,7 @@ class Supervisor:
 
     # -- eventos --------------------------------------------------------
 
-    def receive_message(self, context: OrderContext) -> AgentResult:
+    def receive_message(self, context: OrderContext, message_text: str) -> AgentResult:
         """received -> parsing -> memory_loaded -> validating -> (waiting_customer | ready_for_confirmation).
 
         As três primeiras transições rodam em sequência automaticamente:
@@ -137,6 +137,8 @@ class Supervisor:
         """
 
         self._require_state(context, OrderState.RECEIVED)
+        context.messageText = message_text
+        context.record_event("message_received", {"message": message_text})
         self._transition(context, OrderState.PARSING)
 
         intake_result = self._run_agent(context, self._agents.order_intake(context))
