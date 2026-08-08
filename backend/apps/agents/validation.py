@@ -103,6 +103,10 @@ def _resolve_item(
     hint = _find_sku_hint(context.hints, item.id)
     chosen_sku: str | None = None
     candidates: list[tools.CatalogMatch] = []
+    # Texto usado na busca de fallback lá embaixo — normalmente o próprio
+    # palpite do Intake, mas ver o bloco de reprocessamento abaixo pra
+    # quando isso muda.
+    search_query = item.productGuess
 
     if is_reprocess:
         # Patch: o cliente já respondeu à pergunta de esclarecimento
@@ -113,7 +117,17 @@ def _resolve_item(
         reply = context.latest_customer_reply(item.id)
         if previous is not None and previous.ambiguities and reply is not None:
             previous_candidates = previous.ambiguities[0].candidates
-            chosen_sku = _confirm_candidate(item, previous_candidates, reply)
+            if previous_candidates:
+                chosen_sku = _confirm_candidate(item, previous_candidates, reply)
+            else:
+                # Ambiguidade anterior era "não encontrei nenhum produto"
+                # (candidates=[]) — repetir a busca com o mesmo
+                # `item.productGuess` que já falhou não muda nada e faz a
+                # resposta do cliente ser descartada em silêncio (era
+                # exatamente esse o bug: cliente respondia e "não dava em
+                # nada"). A resposta livre pode trazer o nome certo do
+                # produto, então é ela quem vira a nova busca.
+                search_query = reply
 
     if chosen_sku is None and hint is not None:
         # Guardrail: só aceita o SKU sugerido pela memória se ele ainda
@@ -125,7 +139,7 @@ def _resolve_item(
             chosen_sku = hint.suggests.value
 
     if chosen_sku is None:
-        candidates = tools.search_catalog(item.productGuess, agent_run=agent_run)
+        candidates = tools.search_catalog(search_query, agent_run=agent_run)
         if len(candidates) == 1:
             chosen_sku = candidates[0].sku
 
