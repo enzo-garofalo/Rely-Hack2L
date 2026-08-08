@@ -1,3 +1,12 @@
+
+### Para testar acessar:
+
+
+***https://frontend-production-1290.up.railway.app/***
+
+
+
+
 # Opero
 
 > A camada de operações de IA para distribuidores da América Latina — começando pelos pedidos que já acontecem no WhatsApp.
