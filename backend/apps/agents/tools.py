@@ -6,13 +6,11 @@ chama LLM. É a única forma como os agentes tocam dado comercial real
 interpreta, não inventa" só é verdade porque quem busca o dado é este
 módulo, nunca o texto livre de uma resposta de LLM.
 
-Decisão temporária de arquitetura: o CLAUDE.md descreve acesso ao ERP
-"via HTTP" (API key + Idempotency-Key), mas os endpoints de
-`erp_simulator` ainda não existem — só os models e o admin. Por ora estas
-tools acessam os models via Django ORM direto, com assinaturas já pensadas
-como se fossem a chamada HTTP (mesmos parâmetros, mesmo formato de
-retorno). Trocar para `requests.post(...)` depois é reescrever o corpo de
-cada função, não quem a chama (os agentes G2-G5).
+Decisão de arquitetura (diverge do CLAUDE.md, que descreve acesso ao ERP
+"via HTTP" com API key + Idempotency-Key): esta equipe optou por chamar
+as funções puras direto — sem subir uma API HTTP própria pro ERP
+simulado. As tools acessam os models via Django ORM diretamente; não há
+plano de trocar isso por `requests` mais adiante.
 
 Toda tool recebe um `agent_run` (apps.core.models.AgentRun) obrigatório e
 grava um ToolCall vinculado a ele — cumpre o DoD da task E5 ("dá pra
