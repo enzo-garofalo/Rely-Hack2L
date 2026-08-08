@@ -29,7 +29,6 @@ from decimal import Decimal
 from typing import Iterable
 
 from django.db import IntegrityError, transaction
-from django.db.models import Q
 from django.utils import timezone
 
 from apps.core.models import AgentRun, MemoryEntry, MemoryProposal, ToolCall
@@ -68,6 +67,15 @@ def _log_tool_call(
 # ---------------------------------------------------------------------------
 
 
+def _texts_overlap(a: str, b: str) -> bool:
+    """True se `a` está contido em `b` ou `b` está contido em `a`
+    (ambos já em minúsculas). Usado por `search_catalog` pra casar tanto
+    "coca" -> "Refrigerante Cola 2L" (alias curto, nome longo) quanto
+    "coca 2L" -> "coca" (descrição do cliente mais longa que o alias)."""
+
+    return bool(a) and bool(b) and (a in b or b in a)
+
+
 @dataclass
 class CatalogMatch:
     """Um produto real do catálogo. É só isso que o Validation Agent pode
@@ -80,21 +88,32 @@ class CatalogMatch:
 
 
 def search_catalog(query: str, *, agent_run: AgentRun) -> list[CatalogMatch]:
-    """Resolve um nome informal (ex.: "breja", "coca") em produtos reais,
-    casando contra o nome do produto E os apelidos cadastrados em
+    """Resolve um nome informal (ex.: "breja", "coca 2L") em produtos
+    reais, casando contra o nome do produto E os apelidos cadastrados em
     ErpAlias — é assim que "breja" vira CERV-PILSEN-350. Só considera
     produtos `active=True`. Lista vazia significa "nenhum candidato
     real": o Validation deve tratar como ambiguidade sem match, nunca
     inventar um SKU parecido.
+
+    A comparação é nos dois sentidos (substring em qualquer direção),
+    não só "query contida no nome/alias": o Intake normalmente descreve
+    um item como "coca 2L" ou "2 caixas de coca", que não é substring
+    literal nem do alias cadastrado ("coca") nem do nome do produto
+    ("Refrigerante Cola 2L") — só o contrário é verdade. Só checar um
+    sentido (como esta função fazia antes) deixava a maioria dos itens
+    reais caindo em ambiguidade falsa mesmo com um match óbvio no
+    catálogo. Feito em Python (não em SQL) porque "X contém Y" com Y
+    variável por linha não dá pra expressar num único `Q()`/`icontains`;
+    o catálogo de uma demo é pequeno o bastante pra isso não pesar.
     """
 
-    normalized = query.strip()
-    products = (
-        ErpProduct.objects.filter(active=True)
-        .filter(Q(name__icontains=normalized) | Q(aliases__alias_text__icontains=normalized))
-        .distinct()
-    )
-    matches = [CatalogMatch(sku=p.sku, name=p.name, unitLabel=p.unit_label) for p in products]
+    normalized = query.strip().lower()
+    matches: list[CatalogMatch] = []
+    if normalized:
+        for product in ErpProduct.objects.filter(active=True).prefetch_related("aliases"):
+            candidates_text = [product.name, *[a.alias_text for a in product.aliases.all()]]
+            if any(_texts_overlap(normalized, text.lower()) for text in candidates_text):
+                matches.append(CatalogMatch(sku=product.sku, name=product.name, unitLabel=product.unit_label))
 
     _log_tool_call(
         agent_run,
@@ -136,11 +155,18 @@ class InventoryStatus:
 def check_inventory(sku: str, *, agent_run: AgentRun) -> InventoryStatus | None:
     """`None` quando o SKU nem tem registro de estoque no ERP (não
     deveria acontecer se o SKU veio de `search_catalog`, mas esta tool
-    não assume isso — verifica de novo). Sem registro, trata como
+    não assume isso — verifica de novo) OU quando o produto foi
+    desativado no catálogo. Este segundo caso importa porque esta tool
+    também serve como "SKU ainda existe?" para o caminho de hint de
+    memória em validation.py (que não passa por `search_catalog`, logo
+    nunca vê o filtro `active=True` de lá) — sem checar `active` aqui
+    também, um alias antigo confirmado poderia reviver um produto já
+    descontinuado, furando o guardrail "SKU vem sempre do catálogo real"
+    (CLAUDE.md #1). Sem registro ou produto inativo, trata como
     indisponível ao invés de "provavelmente tem"."""
 
     try:
-        inventory = ErpInventory.objects.get(product__sku=sku)
+        inventory = ErpInventory.objects.get(product__sku=sku, product__active=True)
     except ErpInventory.DoesNotExist:
         status = None
     else:
