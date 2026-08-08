@@ -1,0 +1,5 @@
+# Scripts executados dentro de containers Linux precisam de LF mesmo quando
+# clonados no Windows: um CRLF em start.sh faz o `sh ./start.sh` do Dockerfile
+# falhar com "not found" (o \r vira parte do nome do interpretador).
+*.sh text eol=lf
+Dockerfile text eol=lf

@@ -36,6 +36,10 @@ services:
   frontend:
     build:
       context: ./frontend
+      # Para no stage de build, que tem node_modules e o código-fonte; o
+      # stage final (`runtime`) só carrega o dist buildado e não serve pro
+      # `npm run dev` com bind mount.
+      target: build
     restart: unless-stopped
     env_file:
       - .env

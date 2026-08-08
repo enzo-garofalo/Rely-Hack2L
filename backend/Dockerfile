@@ -16,4 +16,7 @@ COPY . .
 
 EXPOSE 8000
 
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+# Invocado via `sh` para não depender do bit de execução, que não sobrevive
+# a um checkout no Windows. O docker-compose local sobrescreve este CMD com
+# `runserver`; aqui o default é o boot de produção.
+CMD ["sh", "./start.sh"]

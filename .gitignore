@@ -225,3 +225,6 @@ __marimo__/
 # Node / frontend
 node_modules/
 frontend/dist/
+
+# Django collectstatic (STATIC_ROOT)
+staticfiles/
