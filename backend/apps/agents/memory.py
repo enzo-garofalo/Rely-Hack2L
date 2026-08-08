@@ -14,12 +14,15 @@ afirma. Aprendizado nunca é automático.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict
 
 from . import audit, tools
 from .context import OrderContext
 from .schemas import AgentName, AgentResult, AgentStatus, MemoryContext, MemoryProposal
 from .llm_client import LLMOutputError, call_structured
+
+logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = (
     "Você é um consultor de memória para um sistema de pedidos B2B. Recebe os "
@@ -37,6 +40,7 @@ def run(context: OrderContext) -> AgentResult:
     """Assinatura compatível com `orchestrator.AgentRunner`. Cria seu
     próprio AgentRun (as tools chamadas aqui exigem um já aberto)."""
 
+    logger.info("Operational Memory: iniciando recall para order_id=%s", context.orderId)
     agent_run = audit.start_agent_run(context, AgentName.OPERATIONAL_MEMORY)
 
     snapshot = tools.get_customer_memory(context.customer.id, agent_run=agent_run)

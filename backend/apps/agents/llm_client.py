@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from typing import TypeVar
 
 from openai import APIError, APITimeoutError, OpenAI
@@ -133,6 +134,15 @@ def call_structured(
 
     last_error: Exception | None = None
     for attempt in range(1, max_retries + 2):
+        # Log em nível INFO, não WARNING: isso roda mesmo no caminho feliz.
+        # Existe pra dar visibilidade em tempo real de que o agente está
+        # esperando o modelo — sem isso, quem chama (ex.: o dashboard de
+        # visualization/) não tem como saber que algo está acontecendo
+        # enquanto a chamada não retorna, já que o AgentRun/ToolCall só
+        # fica visível no banco depois que a transação inteira do pedido
+        # commitar (ver order_service.py).
+        started_at = time.monotonic()
+        logger.info("call_structured: chamando %s (tentativa %s/%s) para agent=%s", model, attempt, max_retries + 1, agent.value)
         try:
             response = client.chat.completions.create(
                 model=model,
@@ -152,6 +162,8 @@ def call_structured(
             if not tool_calls:
                 raise LLMOutputError(f"modelo {model} respondeu sem tool call (esperava {tool_name}).")
             raw_arguments = tool_calls[0].function.arguments
+            elapsed = time.monotonic() - started_at
+            logger.info("call_structured: %s respondeu em %.1fs para agent=%s", model, elapsed, agent.value)
             return output_schema.model_validate_json(raw_arguments)
         except (APIError, APITimeoutError, ValidationError, LLMOutputError) as exc:
             last_error = exc

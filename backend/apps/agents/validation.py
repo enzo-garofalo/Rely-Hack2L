@@ -11,6 +11,8 @@ catálogo e o cliente responde em texto livre qual deles quis dizer. É o
 
 from __future__ import annotations
 
+import logging
+
 from pydantic import BaseModel
 
 from apps.core.models import AgentRun
@@ -29,6 +31,8 @@ from .schemas import (
     ResolvedItem,
     ValidatedOrder,
 )
+
+logger = logging.getLogger(__name__)
 
 _NEGATIVE_WORDS = {"não", "nao", "n"}
 
@@ -51,6 +55,11 @@ def run(context: OrderContext, item_ref: str | None) -> AgentResult:
     carregados de `context` sem serem tocados de novo.
     """
 
+    logger.info(
+        "Validation: iniciando para order_id=%s (%s)",
+        context.orderId,
+        f"reprocessando item {item_ref}" if item_ref else "pedido inteiro",
+    )
     agent_run = audit.start_agent_run(context, AgentName.VALIDATION)
 
     if item_ref is not None:
