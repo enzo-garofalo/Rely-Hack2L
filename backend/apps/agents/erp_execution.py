@@ -8,9 +8,13 @@ médio basta" — na prática nem precisa de modelo algum).
 
 from __future__ import annotations
 
+import logging
+
 from . import audit, tools
 from .context import OrderContext
 from .schemas import AgentName, AgentResult, AgentStatus, ErpReceipt
+
+logger = logging.getLogger(__name__)
 
 
 def run(context: OrderContext) -> AgentResult:
@@ -20,6 +24,10 @@ def run(context: OrderContext) -> AgentResult:
     checamos de novo aqui — este agente não deveria confiar cegamente em
     quem o invocou (guardrail #3 do CLAUDE.md é "não-negociável")."""
 
+    # Sem LLM aqui — o único log deste agente é este mesmo. Sem ele, esta
+    # etapa fica muda na visualização em tempo real (que lê logs porque o
+    # AgentRun só commita no fim da transação do pedido inteiro).
+    logger.info("ERP Execution: iniciando para order_id=%s", context.orderId)
     agent_run = audit.start_agent_run(context, AgentName.ERP_EXECUTION)
 
     if not (context.approvals.customerConfirmed and context.approvals.operatorApproved):
@@ -69,4 +77,5 @@ def run(context: OrderContext) -> AgentResult:
     )
     result = AgentResult(agent=AgentName.ERP_EXECUTION, status=AgentStatus.OK, data=receipt)
     audit.finish_agent_run(agent_run, next_state="sent_to_erp", result=result)
+    logger.info("ERP Execution: pedido criado no ERP (%s) para order_id=%s", erp_order.external_order_number, context.orderId)
     return result
