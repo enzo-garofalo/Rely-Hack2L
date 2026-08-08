@@ -93,3 +93,6 @@ REST_FRAMEWORK = {
 CORS_ALLOWED_ORIGINS = os.getenv(
     "CORS_ALLOWED_ORIGINS", "http://localhost:5173"
 ).split(",")
+
+# ERP simulado — API key simples exigida no header X-API-Key (RF33, RNF04).
+ERP_API_KEY = os.getenv("ERP_API_KEY", "dev-erp-api-key")
