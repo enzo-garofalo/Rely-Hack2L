@@ -17,6 +17,16 @@ def _serialize_customer(customer) -> dict:
     return {"id": customer.id, "name": customer.name, "phone": customer.phone}
 
 
+def _serialize_receipt(receipt) -> dict | None:
+    if receipt is None:
+        return None
+    data = receipt.model_dump(mode="json")
+    # O schema interno usa externalOrderId; o contrato HTTP congelado usa
+    # erpOrderId. A tradução fica na borda, sem alterar o snapshot interno.
+    data["erpOrderId"] = data.pop("externalOrderId")
+    return data
+
+
 def _serialize_resolved(draft: OrderItemDraft | None, resolved: ResolvedItem) -> dict:
     quantity = draft.quantity if draft else None
     return {
@@ -31,6 +41,7 @@ def _serialize_resolved(draft: OrderItemDraft | None, resolved: ResolvedItem) ->
         "unitPrice": resolved.unitPrice,
         "subtotal": (quantity * resolved.unitPrice) if quantity is not None else None,
         "inStock": resolved.inStock,
+        "confidence": draft.confidence if draft else None,
     }
 
 
@@ -42,6 +53,7 @@ def _serialize_ambiguous(draft: OrderItemDraft | None, ambiguous: AmbiguousItem)
         "quantity": draft.quantity if draft else None,
         "unit": draft.unit if draft else "",
         "status": "ambiguous",
+        "confidence": draft.confidence if draft else None,
         "ambiguities": [
             {"field": a.field, "question": a.question, "candidates": a.candidates}
             for a in ambiguous.ambiguities
@@ -85,7 +97,7 @@ def serialize_order(order: Order) -> dict:
             "pendingClarification": pending_clarification,
             "customerConfirmed": context.approvals.customerConfirmed,
             "operatorApproved": context.approvals.operatorApproved,
-            "erpReceipt": context.erpReceipt.model_dump(mode="json") if context.erpReceipt else None,
+            "erpReceipt": _serialize_receipt(context.erpReceipt),
         }
 
     return {

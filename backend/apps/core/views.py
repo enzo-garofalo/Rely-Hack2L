@@ -112,8 +112,7 @@ class OrderApproveView(APIView):
 
         response = _pipeline_response(outcome, ok_status=status.HTTP_200_OK)
         if outcome.result.status == AgentStatus.OK:
-            version = outcome.order.current_version
-            response.data["erpReceipt"] = (version.context_snapshot or {}).get("erpReceipt") if version else None
+            response.data["erpReceipt"] = serialize_order(outcome.order)["currentVersion"]["erpReceipt"]
         return response
 
 

@@ -112,6 +112,7 @@ Estrutura a mensagem livre em itens. Preserva a evidência original.
       "productGuess": "coca 2L",
       "quantity": 10,
       "unit": "caixa",
+      "confidence": 0.9,
       "sku": null,
       "ambiguities": []
     }

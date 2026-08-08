@@ -306,9 +306,9 @@ Sobre a voz (Bloco 5): é **enhancement**, não faz parte do caminho crítico. S
 
 ### Order API (backend → frontend)
 ```text
-POST /api/orders/ingest            { message } → { orderId }
+POST /api/orders/ingest            { customerId, message } → pedido completo
 GET  /api/orders/{id}              → estado completo do pedido
-POST /api/orders/{id}/customer-reply { text }
+POST /api/orders/{id}/customer-reply { message, itemRef? }
 POST /api/orders/{id}/confirm      → confirmação do cliente (versão atual)
 POST /api/orders/{id}/approve      → aprovação do operador → dispara ERP
 GET  /api/orders/{id}/timeline     → agent runs + tool calls + estados

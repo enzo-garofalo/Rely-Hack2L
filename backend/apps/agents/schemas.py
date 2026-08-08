@@ -61,6 +61,7 @@ class OrderItemDraft(BaseModel):
     productGuess: str  # nome do produto como o modelo entendeu (ex: "coca 2L"), ainda não é um SKU
     quantity: float  # quantidade informada pelo cliente, tal como veio (a unidade separada no campo abaixo)
     unit: str  # unidade informada (ex: "caixa", "fardo", "unidade") — ainda em linguagem do cliente, não do catálogo
+    confidence: float = Field(ge=0.0, le=1.0)  # confiança da extração; baixa confiança permanece visível e não resolve ambiguidade
     sku: str | None = None  # normalmente None aqui; Intake não resolve SKU (guardrail: "não resolve SKU, não inventa item")
     ambiguities: list[str] = Field(default_factory=list)  # pontos que o próprio Intake já percebeu como incertos neste item
 

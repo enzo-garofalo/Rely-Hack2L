@@ -9,16 +9,22 @@ Validation, mais adiante no pipeline.
 
 from __future__ import annotations
 
+import logging
+
 from . import audit
 from .context import OrderContext
 from .llm_client import LLMOutputError, call_structured
 from .schemas import AgentName, AgentResult, AgentStatus, OrderDraft
+
+logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = (
     "Você estrutura pedidos de um cliente B2B a partir de uma mensagem livre "
     "de WhatsApp. Extraia cada item pedido, preservando o texto original "
     "exato de cada um em rawText. Não resolva SKU (deixe null), não invente "
     "item que não foi mencionado na mensagem, não calcule preço ou total. "
+    "Atribua confidence entre 0 e 1 para cada extração; confiança baixa deve "
+    "permanecer explícita e aparecer em ambiguities, nunca ser escondida. "
     "Se faltar alguma informação (ex.: data de entrega), liste em "
     "missingFields em vez de adivinhar."
 )
@@ -35,6 +41,8 @@ def run(context: OrderContext) -> AgentResult:
     validation.py e erp_execution.py."""
 
     agent_run = audit.start_agent_run(context, AgentName.ORDER_INTAKE)
+
+    logger.info("Order Intake: iniciando para order_id=%s", context.orderId)
 
     if not context.messageText.strip():
         result = AgentResult(

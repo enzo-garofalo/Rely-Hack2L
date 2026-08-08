@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+import re
 
 from django.core.management import call_command
 from django.db import transaction
@@ -223,6 +224,7 @@ def _sync_order_items(version: OrderVersion, context: OrderContext) -> None:
             unit_price=unit_price,
             subtotal=quantity * unit_price,
             in_stock=resolved.inStock,
+            confidence=draft.confidence if draft else None,
         )
 
     for ambiguous in context.ambiguities:
@@ -233,6 +235,7 @@ def _sync_order_items(version: OrderVersion, context: OrderContext) -> None:
             product_hint=draft.productGuess if draft else "",
             unit=draft.unit if draft else "",
             quantity=Decimal(str(draft.quantity)) if draft else Decimal("0"),
+            confidence=draft.confidence if draft else None,
         )
 
 
@@ -303,6 +306,24 @@ def ingest_audio_message(
     )
 
 
+def _observed_alias(raw_text: str) -> str:
+    """Remove quantidade e singulariza a embalagem inicial para registrar
+    o apelido confirmado, preservando o restante da fala como evidência.
+
+    Ex.: ``6 fardos da zero`` vira ``fardo da zero``. Não tenta resolver
+    produto nem SKU; isso já foi feito pelo Validation contra o catálogo.
+    """
+
+    without_quantity = re.sub(r"^\s*\d+(?:[.,]\d+)?\s+", "", raw_text).strip()
+    return re.sub(
+        r"^(caixas?|fardos?)\b",
+        lambda match: "caixa" if match.group(1).startswith("caixa") else "fardo",
+        without_quantity,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+
+
 @transaction.atomic
 def submit_customer_reply(*, order_id: int, message: str, item_ref: str | None = None) -> PipelineOutcome:
     """POST /api/orders/{id}/customer-reply — resposta do cliente a uma
@@ -318,7 +339,7 @@ def submit_customer_reply(*, order_id: int, message: str, item_ref: str | None =
             raise OrderServiceError("não há esclarecimento pendente para este pedido")
         item_ref = context.ambiguities[0].itemRef
 
-    Message.objects.create(
+    reply_message = Message.objects.create(
         conversation=order.conversation,
         order=order,
         sender=Message.Sender.CUSTOMER,
@@ -331,6 +352,23 @@ def submit_customer_reply(*, order_id: int, message: str, item_ref: str | None =
         raise OrderServiceError(str(exc)) from exc
 
     _persist_context(order, context, result)
+
+    # Uma proposta nasce somente quando uma pendência anterior foi
+    # efetivamente resolvida contra o catálogo. Ela continua sendo apenas
+    # pending_review: nunca vira MemoryEntry automaticamente.
+    if result.status == AgentStatus.OK:
+        draft = next((item for item in context.items if item.id == item_ref), None)
+        resolved = next((item for item in context.resolvedItems if item.itemRef == item_ref), None)
+        still_ambiguous = any(item.itemRef == item_ref for item in context.ambiguities)
+        if draft is not None and resolved is not None and not still_ambiguous:
+            memory.propose(
+                context,
+                observed=_observed_alias(draft.rawText),
+                resolved_sku=resolved.sku,
+                evidence_quote=message,
+                conversation_ref=f"message-{reply_message.id}",
+                source_order_version_id=order.current_version_id,
+            )
     return PipelineOutcome(order=order, result=result)
 
 
@@ -402,7 +440,7 @@ def reset_demo() -> None:
     """
 
     call_command("flush", interactive=False)
-    call_command("seed")
+    call_command("seed_demo")
 
 
 def response_text_for_order(order: Order) -> str:

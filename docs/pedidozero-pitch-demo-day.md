@@ -69,18 +69,16 @@ O Opero não é um chatbot. É uma camada operacional de agentes para distribuid
 
 ## 5. Ordem da demo
 
-1. Abrir Overview e mostrar volume, filas e automação.
-2. Ir para Order Operations.
-3. Iniciar cenário demonstrativo.
-4. Abrir o pedido do Mercado Boa Compra.
-5. Mostrar a conversa original.
-6. Mostrar os itens estruturados.
-7. Mostrar memória resolvendo "óleo da última vez".
-8. Mostrar validação bloqueando "fardo da zero".
-9. Simular resposta do cliente.
-10. Aprovar como operador.
-11. Mostrar recibo no ERP Simulator.
-12. Mostrar Runs & Logs com agentes e tool calls.
+1. Abrir Order Operations já no estado inicial e apontar o health check.
+2. Enviar a mensagem preparada do Mercado Boa Compra.
+3. Mostrar a conversa original e os itens estruturados com evidência e confiança.
+4. Mostrar memória resolvendo "óleo da última vez".
+5. Mostrar validação bloqueando "fardo da zero".
+6. Responder ao esclarecimento no chat.
+7. Destacar a proposta de memória `pending_review`.
+8. Confirmar como cliente e aprovar como operador.
+9. Mostrar número externo, `Idempotency-Key` e payload no recibo.
+10. Fechar o recibo e mostrar agentes, transições e tool calls na timeline.
 
 ---
 
