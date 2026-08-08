@@ -1,4 +1,4 @@
-# PedidoZero
+# Opero
 
 > A camada de operações de IA para distribuidores da América Latina — começando pelos pedidos que já acontecem no WhatsApp.
 
@@ -65,8 +65,8 @@ O ERP simulado vive no mesmo projeto Django, mas é tratado como serviço extern
 Pré-requisitos: Docker e Docker Compose.
 
 ```bash
-git clone <repo> pedidozero
-cd pedidozero
+git clone <repo> opero
+cd opero
 cp .env.example .env        # preencher a chave do modelo e as configs
 docker-compose up --build
 ```
@@ -92,7 +92,7 @@ Resetar o cenário a qualquer momento pelo botão `Reset demo` na interface ou v
 ## Estrutura do repositório
 
 ```text
-pedidozero/
+opero/
 ├── docker-compose.yml
 ├── .env.example
 ├── backend/                  # Django + DRF

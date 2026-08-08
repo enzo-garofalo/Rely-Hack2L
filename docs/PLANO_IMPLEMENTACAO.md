@@ -1,4 +1,4 @@
-# Plano de Implementação — PedidoZero
+# Plano de Implementação — Opero
 
 > **Contexto:** hackathon de AI Agents. Jornada única P0 (WhatsApp → agentes → validação → confirmação → aprovação humana → ERP), sem redigitação e sem inventar dados.
 >
@@ -15,7 +15,7 @@
 ### 0.1 Estrutura do repositório (monorepo)
 
 ```text
-pedidozero/
+opero/
 ├── docker-compose.yml
 ├── .env.example
 ├── backend/                  # Django + DRF (Enzo é dono da estrutura)

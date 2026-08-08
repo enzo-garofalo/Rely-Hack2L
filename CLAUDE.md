@@ -2,7 +2,7 @@
 
 Guia para agentes de IA (Claude Code) trabalhando neste repositório. Leia antes de escrever qualquer código.
 
-## O que é o PedidoZero
+## O que é o Opero
 
 Uma equipe de agentes de IA transforma uma conversa B2B do WhatsApp em um pedido validado, confirmado, aprovado por humano e criado no ERP — sem redigitação e sem inventar dados. Projeto de hackathon; a regra de ouro é: **não construa nada novo até a jornada feliz rodar 3× seguidas.** Prefira sempre a alternativa mais simples que mantém a jornada ponta a ponta.
 

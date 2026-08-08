@@ -1,4 +1,4 @@
-# Requisitos Funcionais — PedidoZero
+# Requisitos Funcionais — Opero
 
 > **Escopo:** jornada única P0 do hackathon — uma conversa B2B do WhatsApp vira um pedido validado, confirmado, aprovado por humano e criado no ERP simulado, com auditoria completa.
 >
@@ -86,7 +86,7 @@
 - **RF33** O ERP simulado deve expor `POST /api/erp/orders` com autenticação por API key e suporte a `Idempotency-Key`.
 - **RF34** O ERP simulado deve expor `GET /api/erp/orders/{id}` para consulta do pedido criado.
 - **RF35** Chamar `POST /api/erp/orders` com a mesma chave de idempotência deve devolver o pedido existente, sem criar um novo.
-- **RF36** O ERP simulado deve permanecer como system of record; o PedidoZero opera sobre ele, não o substitui.
+- **RF36** O ERP simulado deve permanecer como system of record; o Opero opera sobre ele, não o substitui.
 
 ### 2.10 Auditoria e logs
 
@@ -168,7 +168,7 @@ Estes são a linguagem comum entre backend e AI. Devem ser congelados antes de c
 {
   "erpOrderId": "ERP-2026-0001",
   "status": "sent_to_erp",
-  "idempotencyKey": "pedidozero-ord_001-v3"
+  "idempotencyKey": "opero-ord_001-v3"
 }
 ```
 
