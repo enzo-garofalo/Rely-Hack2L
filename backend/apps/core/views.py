@@ -1,12 +1,14 @@
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import api_view
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.agents.schemas import AgentStatus
 
-from . import order_service
+from . import order_service, voice
 from .models import Customer, Order
 from .serializers import serialize_order, serialize_timeline
 
@@ -112,6 +114,85 @@ class OrderApproveView(APIView):
         if outcome.result.status == AgentStatus.OK:
             version = outcome.order.current_version
             response.data["erpReceipt"] = (version.context_snapshot or {}).get("erpReceipt") if version else None
+        return response
+
+
+class OrderIngestAudioView(APIView):
+    """POST /api/orders/ingest-audio — mesma jornada do ingest de texto,
+    só que a mensagem chega em áudio (E9, RF42-45). Transcreve com
+    ElevenLabs e alimenta o MESMO `_ingest` do texto — não existe pipeline
+    paralelo pra voz."""
+
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        customer_id = request.data.get("customerId")
+        audio = request.FILES.get("audio")
+        if not customer_id or not audio:
+            return Response(
+                {"detail": "customerId e audio (multipart) são obrigatórios."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not Customer.objects.filter(pk=customer_id).exists():
+            return Response({"detail": "customer não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        audio_bytes = audio.read()
+        audio.seek(0)
+
+        try:
+            transcription = voice.transcribe(audio_bytes, audio.content_type)
+        except voice.VoiceError as exc:
+            # RF47: falha de transcrição não quebra o fluxo — não cria
+            # pedido nenhum (não há texto pra alimentar o pipeline);
+            # devolve o erro pra UI oferecer reenvio ou entrada por texto.
+            return Response(
+                {"detail": "falha ao transcrever áudio.", "voiceError": str(exc)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        if not transcription.text.strip():
+            return Response(
+                {"detail": "transcrição vazia — tente reenviar o áudio ou digite a mensagem."},
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+        outcome = order_service.ingest_audio_message(
+            customer_id=customer_id,
+            audio_file=audio,
+            transcription_text=transcription.text,
+            transcription_confidence=transcription.languageProbability,
+        )
+
+        response = _pipeline_response(outcome, ok_status=status.HTTP_201_CREATED)
+        # RF46: a transcrição precisa ficar visível pro operador antes de
+        # qualquer outra coisa — vai na própria resposta do ingest, não só
+        # escondida dentro do Message.
+        response.data["transcription"] = transcription.text
+        response.data["transcriptionConfidence"] = transcription.languageProbability
+        return response
+
+
+class OrderVoiceReplyView(APIView):
+    """GET /api/orders/{id}/voice-reply — sintetiza em áudio a pergunta
+    de esclarecimento pendente ou o resumo atual (E9, RF48-49). O texto
+    (`order_service.response_text_for_order`) sempre existe; se a síntese
+    falhar, a resposta vem em JSON com esse texto e sem áudio — nunca
+    trava o fluxo (RNF08)."""
+
+    def get(self, request, pk):
+        order = get_object_or_404(Order, pk=pk)
+        text = order_service.response_text_for_order(order)
+
+        try:
+            audio_bytes = voice.synthesize(text)
+        except voice.VoiceError as exc:
+            return Response(
+                {"text": text, "audioAvailable": False, "voiceError": str(exc)},
+                status=status.HTTP_200_OK,
+            )
+
+        response = HttpResponse(audio_bytes, content_type="audio/mpeg")
+        response["Content-Disposition"] = 'inline; filename="voice-reply.mp3"'
         return response
 
 

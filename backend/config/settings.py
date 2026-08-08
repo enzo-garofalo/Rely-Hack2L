@@ -83,6 +83,11 @@ USE_TZ = True
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Evidência de voz (E9): Message.audio_file (core/models.py) precisa de um
+# MEDIA_ROOT real pra salvar o áudio original do cliente (RF45).
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",

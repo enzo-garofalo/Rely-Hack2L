@@ -106,15 +106,21 @@ def serialize_timeline(order: Order) -> dict:
     events: list[dict] = []
 
     for message in order.messages.all():
-        events.append(
-            {
-                "type": "message",
-                "at": message.created_at.isoformat(),
-                "sender": message.sender,
-                "channel": message.channel,
-                "content": message.content,
-            }
-        )
+        event = {
+            "type": "message",
+            "at": message.created_at.isoformat(),
+            "sender": message.sender,
+            "channel": message.channel,
+            "content": message.content,
+        }
+        if message.channel == message.Channel.VOICE:
+            # RF45/RF46: o áudio original fica recuperável (não só
+            # guardado), e a confiança da transcrição fica visível pro
+            # operador auditar — `content` já é a transcrição em si.
+            event["transcription"] = message.transcription
+            event["transcriptionConfidence"] = message.transcription_confidence
+            event["audioUrl"] = message.audio_file.url if message.audio_file else None
+        events.append(event)
 
     agent_runs = order.agent_runs.prefetch_related("tool_calls").all()
     for run in agent_runs:
