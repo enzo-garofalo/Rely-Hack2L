@@ -20,6 +20,7 @@ from django.utils import timezone
 from apps.core.models import AgentRun
 
 from .context import OrderContext
+from .sanitize import sanitize
 from .schemas import AgentName, AgentResult, AgentStatus
 
 # AgentRun.Agent usa "memory" para o Operational Memory Agent, enquanto
@@ -57,7 +58,7 @@ def finish_agent_run(agent_run: AgentRun, *, next_state: str, result: AgentResul
 
     agent_run.next_state = next_state
     agent_run.success = result.status == AgentStatus.OK
-    agent_run.reason = result.error or ""
-    agent_run.output_summary = result.model_dump(mode="json") if result.data is not None else {}
+    agent_run.reason = sanitize(result.error or "")
+    agent_run.output_summary = sanitize(result.model_dump(mode="json")) if result.data is not None else {}
     agent_run.finished_at = timezone.now()
     agent_run.save(update_fields=["next_state", "success", "reason", "output_summary", "finished_at"])

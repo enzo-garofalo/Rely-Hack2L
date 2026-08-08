@@ -35,6 +35,8 @@ from django.utils import timezone
 from apps.core.models import AgentRun, MemoryEntry, MemoryProposal, ToolCall
 from apps.erp_simulator.models import ErpIdempotencyKey, ErpInventory, ErpOrder, ErpPrice, ErpProduct
 
+from .sanitize import sanitize
+
 
 def _log_tool_call(
     agent_run: AgentRun,
@@ -47,15 +49,17 @@ def _log_tool_call(
 ) -> None:
     """Grava a chamada na auditoria. Único ponto do arquivo que cria um
     ToolCall — todas as tools passam por aqui, sempre no fim (com o
-    resultado já em mãos), nunca antes."""
+    resultado já em mãos), nunca antes. `sanitize` (E8, RF38) roda aqui
+    para que toda tool, presente e futura, saia sanitizada sem precisar
+    lembrar de chamar nada por conta própria."""
 
     ToolCall.objects.create(
         agent_run=agent_run,
         tool_name=tool_name,
-        input_data=input_data,
-        output_data=output_data,
+        input_data=sanitize(input_data),
+        output_data=sanitize(output_data),
         success=success,
-        error_message=error_message,
+        error_message=sanitize(error_message),
     )
 
 

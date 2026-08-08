@@ -74,7 +74,10 @@ def run(context: OrderContext) -> AgentResult:
             messages=messages,
             output_schema=MemoryContext,
         )
-    except LLMOutputError as exc:
+    except (LLMOutputError, RuntimeError) as exc:
+        # RuntimeError também: config de LLM incompleta (ver intake.py) não
+        # pode deixar este AgentRun aberto — recall é opcional pro fluxo,
+        # mas a auditoria da tentativa não é.
         result = AgentResult(agent=AgentName.OPERATIONAL_MEMORY, status=AgentStatus.ERROR, error=str(exc))
         audit.finish_agent_run(agent_run, next_state=context.state.value, result=result)
         return result

@@ -201,7 +201,12 @@ def _confirm_candidate(item: OrderItemDraft, candidate_skus: list[str], reply: s
 
     try:
         choice = call_structured(agent=AgentName.VALIDATION, messages=messages, output_schema=_ClarificationChoice)
-    except LLMOutputError:
+    except (LLMOutputError, RuntimeError):
+        # RuntimeError também: config de LLM incompleta (ver intake.py). Sem
+        # capturar aqui, o erro escaparia de `run()` inteiro e deixaria o
+        # AgentRun do Validation (aberto lá em cima) sem fechar — em vez
+        # disso, trata como "não deu pra confirmar" (vira ambiguidade de
+        # novo, nunca escolhe um candidato às cegas).
         return None
 
     if choice.chosenSku in candidate_skus:
