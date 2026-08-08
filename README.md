@@ -1,4 +1,7 @@
-# PedidoZero
+# Opero
+
+<img width="1600" height="900" alt="image" src="https://github.com/user-attachments/assets/44b39cda-533b-4cab-8178-2c1eaa822977" />
+
 
 > A camada de operações de IA para distribuidores da América Latina — começando pelos pedidos que já acontecem no WhatsApp.
 
