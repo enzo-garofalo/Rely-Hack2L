@@ -1,0 +1,142 @@
+{
+  "info": {
+    "name": "Opero · Order API (E7)",
+    "description": "Jornada completa sem UI: ingest -> (customer-reply se houver esclarecimento) -> confirm -> approve -> timeline. Rode 'POST Demo Reset' primeiro para garantir o dataset congelado. Ajuste customer_id conforme o cliente semeado (ver GET /api/erp/context/{id} ou o admin do Django).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000/api" },
+    { "key": "customer_id", "value": "1", "description": "Troque pelo id de um Customer real (ver Django admin ou GET /api/erp/context/{id})" },
+    { "key": "order_id", "value": "", "description": "Preenchido automaticamente pelo test script de 'POST Ingest'" },
+    { "key": "item_ref", "value": "", "description": "Opcional: id do item ambíguo (ver pendingClarification.itemRef em GET Order). Se vazio, customer-reply usa o primeiro item pendente." },
+    { "key": "approved_by", "value": "Operador Demo" }
+  ],
+  "item": [
+    {
+      "name": "POST Demo Reset",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": { "raw": "{{base_url}}/demo/reset/", "host": ["{{base_url}}"], "path": ["demo", "reset", ""] },
+        "description": "Restaura o dataset congelado (RF40). Rode antes de começar a jornada, e sempre que quiser repetir a demo do zero."
+      }
+    },
+    {
+      "name": "1. POST Ingest (mensagem inicial)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 201 || pm.response.code === 502) {",
+              "    const body = pm.response.json();",
+              "    if (body.orderId) { pm.collectionVariables.set('order_id', body.orderId); }",
+              "}",
+              "pm.test('Status é 201 (pipeline ok) ou 502 (agente falhou, ver agentError)', function () {",
+              "    pm.expect([201, 502]).to.include(pm.response.code);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customerId\": {{customer_id}},\n  \"message\": \"Bom dia! Pode me mandar 10 cx de coca 2L, 6 fardos da zero e 15 do óleo da última vez? Entrega amanhã de manhã.\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{base_url}}/orders/ingest/", "host": ["{{base_url}}"], "path": ["orders", "ingest", ""] },
+        "description": "Cria conversa+pedido e dispara Order Intake -> Memory -> Validation. Se sobrar ambiguidade (ex.: 'fardo da zero'), o pedido para em waiting_customer — use a request 2 para responder. 502 com agentError indica falha do LLM (ex.: FEATHERLESS_API_KEY/MODEL_* não configurados)."
+      }
+    },
+    {
+      "name": "2. GET Order (estado completo)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{base_url}}/orders/{{order_id}}/", "host": ["{{base_url}}"], "path": ["orders", "{{order_id}}", ""] },
+        "description": "Itens (resolvidos/ambíguos), evidência, esclarecimento pendente (currentVersion.pendingClarification), total e flags de confirmação/aprovação."
+      }
+    },
+    {
+      "name": "3. POST Customer Reply (só se houver pendingClarification)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"itemRef\": \"{{item_ref}}\",\n  \"message\": \"É a Coca Zero em fardo com 12 latas de 350ml mesmo.\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{base_url}}/orders/{{order_id}}/customer-reply/",
+          "host": ["{{base_url}}"],
+          "path": ["orders", "{{order_id}}", "customer-reply", ""]
+        },
+        "description": "Reprocessa só o item referenciado. Se 'itemRef' ficar vazio na variável de coleção, o backend usa o primeiro item ainda ambíguo. Repita GET Order depois para conferir se ready_for_confirmation foi alcançado."
+      }
+    },
+    {
+      "name": "4. POST Confirm (cliente confirma o resumo)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": { "raw": "{{base_url}}/orders/{{order_id}}/confirm/", "host": ["{{base_url}}"], "path": ["orders", "{{order_id}}", "confirm", ""] },
+        "description": "Só funciona com o pedido em ready_for_confirmation. Vincula a confirmação à versão atual (RF22)."
+      }
+    },
+    {
+      "name": "5. POST Approve (operador aprova -> dispara ERP)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"approvedBy\": \"{{approved_by}}\",\n  \"notes\": \"Aprovado na demo.\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{base_url}}/orders/{{order_id}}/approve/", "host": ["{{base_url}}"], "path": ["orders", "{{order_id}}", "approve", ""] },
+        "description": "Exige customerConfirmed=true (request 4). Sucesso devolve state=sent_to_erp e o erpReceipt (externalOrderId, idempotencyKey)."
+      }
+    },
+    {
+      "name": "6. GET Timeline",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{base_url}}/orders/{{order_id}}/timeline/", "host": ["{{base_url}}"], "path": ["orders", "{{order_id}}", "timeline", ""] },
+        "description": "Mensagens + AgentRun (com ToolCalls) + confirmação + aprovação, em ordem cronológica (RF37-39)."
+      }
+    },
+    {
+      "name": "Erros — Ingest sem customerId (esperado 400)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"message\": \"Pedido sem cliente\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{base_url}}/orders/ingest/", "host": ["{{base_url}}"], "path": ["orders", "ingest", ""] }
+      }
+    },
+    {
+      "name": "Erros — Approve sem confirm antes (esperado 409)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"approvedBy\": \"Operador Demo\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{base_url}}/orders/{{order_id}}/approve/", "host": ["{{base_url}}"], "path": ["orders", "{{order_id}}", "approve", ""] },
+        "description": "Rode logo após 'POST Ingest' (antes de confirmar) para ver o guard 409 do Supervisor."
+      }
+    }
+  ]
+}
