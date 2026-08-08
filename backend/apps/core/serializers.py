@@ -118,6 +118,7 @@ def serialize_timeline(order: Order) -> dict:
 
     agent_runs = order.agent_runs.prefetch_related("tool_calls").all()
     for run in agent_runs:
+        finished_at = (run.finished_at or run.started_at).isoformat()
         events.append(
             {
                 "type": "agent_run",
@@ -140,24 +141,77 @@ def serialize_timeline(order: Order) -> dict:
                 ],
             }
         )
+        # Entrada dedicada de transição (RF37/E8: "AgentRun + ToolCall +
+        # transições ordenados"), além do agent_run acima que já carrega
+        # previousState/nextState — útil pra uma UI renderizar só a
+        # sequência de estados sem precisar entender a forma de agent_run.
+        # Sem transição de fato (falha antes de qualquer mudança, ou
+        # next_state nunca setado) não gera entrada — nada é inventado.
+        if run.next_state and run.previous_state != run.next_state:
+            events.append(
+                {
+                    "type": "state_transition",
+                    "at": finished_at,
+                    "from": run.previous_state,
+                    "to": run.next_state,
+                    "causedBy": run.agent_name,
+                }
+            )
 
     for confirmation in CustomerConfirmation.objects.filter(order_version__order=order):
+        at = confirmation.confirmed_at.isoformat()
         events.append(
             {
                 "type": "customer_confirmation",
-                "at": confirmation.confirmed_at.isoformat(),
+                "at": at,
                 "versionNumber": confirmation.order_version.version_number,
+            }
+        )
+        # customer_confirm() no orchestrator.py anda direto
+        # ready_for_confirmation -> customer_confirmed -> pending_approval,
+        # sem chamar agente — por isso as duas transições são sintéticas
+        # aqui, e não vêm de um AgentRun.
+        events.append(
+            {
+                "type": "state_transition",
+                "at": at,
+                "from": "ready_for_confirmation",
+                "to": "customer_confirmed",
+                "causedBy": "customer_confirm",
+            }
+        )
+        events.append(
+            {
+                "type": "state_transition",
+                "at": at,
+                "from": "customer_confirmed",
+                "to": "pending_approval",
+                "causedBy": "customer_confirm",
             }
         )
 
     for approval in OperatorApproval.objects.filter(order_version__order=order):
+        at = approval.approved_at.isoformat()
         events.append(
             {
                 "type": "operator_approval",
-                "at": approval.approved_at.isoformat(),
+                "at": at,
                 "versionNumber": approval.order_version.version_number,
                 "approvedBy": approval.approved_by,
                 "notes": approval.notes,
+            }
+        )
+        # pending_approval -> sending_to_erp acontece antes do Supervisor
+        # chamar o ERP Execution Agent; a transição seguinte
+        # (sending_to_erp -> sent_to_erp/erp_execution_failed) já vem do
+        # agent_run do erp_execution, então não é duplicada aqui.
+        events.append(
+            {
+                "type": "state_transition",
+                "at": at,
+                "from": "pending_approval",
+                "to": "sending_to_erp",
+                "causedBy": "operator_approve",
             }
         )
 

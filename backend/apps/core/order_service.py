@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
+from django.core.management import call_command
 from django.db import transaction
 from django.db.models import Max
 
@@ -337,3 +338,22 @@ def approve_operator(*, order_id: int, approved_by: str, notes: str = "") -> Pip
         version.save(update_fields=["context_snapshot"])
     order.save(update_fields=["state", "updated_at"])
     return PipelineOutcome(order=order, result=result)
+
+
+def reset_demo() -> None:
+    """POST /api/demo/reset — restaura o dataset congelado a um estado
+    idêntico (RF40, RNF03: "a demo roda 3x seguidas").
+
+    `seed.py` (o comando de seed) só faz `.objects.all().delete()` antes
+    de repopular — isso apaga as linhas, mas o Postgres não reinicia as
+    sequences de PK sozinho numa exclusão comum (só em TRUNCATE ...
+    RESTART IDENTITY). Sem isso, cada reset desloca todos os ids pra
+    cima, e "estado idêntico" vira "mesmos dados, ids diferentes" — o
+    suficiente pra quebrar qualquer id fixo (num teste do Postman, no
+    frontend). `flush` é o comando padrão do Django pra isso: dá TRUNCATE
+    com RESTART IDENTITY CASCADE em todas as tabelas antes do seed rodar
+    de novo.
+    """
+
+    call_command("flush", interactive=False)
+    call_command("seed")

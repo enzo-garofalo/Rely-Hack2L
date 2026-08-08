@@ -1,4 +1,3 @@
-from django.core.management import call_command
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import api_view
@@ -129,5 +128,5 @@ class DemoResetView(APIView):
     """POST /api/demo/reset — restaura o dataset congelado (RF40)."""
 
     def post(self, request):
-        call_command("seed")
+        order_service.reset_demo()
         return Response({"status": "reset"})
