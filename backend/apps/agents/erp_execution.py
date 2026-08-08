@@ -48,16 +48,16 @@ def run(context: OrderContext) -> AgentResult:
         audit.finish_agent_run(agent_run, next_state=context.state.value, result=result)
         return result
 
-    quantity_by_ref = {item.id: item.quantity for item in context.items}
-    items_payload = [
-        {"sku": resolved.sku, "qty": quantity_by_ref[resolved.itemRef]} for resolved in context.resolvedItems
-    ]
-    # Determinística e estável por pedido: a mesma combinação
-    # conversa+order nunca gera duas chaves diferentes, então um retry
-    # (timeout, reconexão) sempre cai na mesma Idempotency-Key.
-    idempotency_key = f"order-{context.conversationId}-{context.orderId}"
-
     try:
+        quantity_by_ref = {item.id: item.quantity for item in context.items}
+        items_payload = [
+            {"sku": resolved.sku, "qty": quantity_by_ref[resolved.itemRef]} for resolved in context.resolvedItems
+        ]
+        # Determinística e estável por pedido: a mesma combinação
+        # conversa+order nunca gera duas chaves diferentes, então um retry
+        # (timeout, reconexão) sempre cai na mesma Idempotency-Key.
+        idempotency_key = f"order-{context.conversationId}-{context.orderId}"
+
         erp_order = tools.create_erp_order(
             context.customer.id,
             items_payload,
@@ -65,7 +65,11 @@ def run(context: OrderContext) -> AgentResult:
             idempotency_key,
             agent_run=agent_run,
         )
-    except Exception as exc:  # falha real do ERP (ex.: banco fora do ar) — nunca vira sucesso silencioso
+    except Exception as exc:
+        # Bloco cobre tanto falha real do ERP (ex.: banco fora do ar)
+        # quanto qualquer erro na montagem do payload acima — nos dois
+        # casos o AgentRun aberto no início desta função precisa fechar
+        # (guardrail #7: falha nunca fica muda nem sem auditoria).
         result = AgentResult(agent=AgentName.ERP_EXECUTION, status=AgentStatus.ERROR, error=str(exc))
         audit.finish_agent_run(agent_run, next_state="erp_execution_failed", result=result)
         return result
