@@ -153,7 +153,18 @@ async function ingestDemo(user: ReturnType<typeof userEvent.setup>) {
 
 describe("console Opero", () => {
   beforeEach(() => {
+    window.history.replaceState(null, "", "/");
     installHappyApi();
+  });
+
+  it("mantém uma única página principal com os três painéis juntos", () => {
+    render(<App />);
+
+    expect(screen.getAllByRole("link")).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "Operação do pedido" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("region", { name: "Conversa" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Pedido estruturado" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Agentes e logs" })).toBeInTheDocument();
   });
 
   it("mostra health check e os três painéis no estado vazio", async () => {

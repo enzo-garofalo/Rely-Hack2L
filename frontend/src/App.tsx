@@ -42,12 +42,6 @@ const agentCopy: Record<string, { label: string; icon: IconName; className: stri
   erp_execution: { label: "ERP Execution Agent", icon: "zap", className: "agent-blue" },
 };
 
-const navItems: Array<{ label: string; icon: IconName; href: string; active?: boolean }> = [
-  { label: "Conversa", icon: "message-circle", href: "#conversation" },
-  { label: "Pedido estruturado", icon: "inbox", href: "#structured-order", active: true },
-  { label: "Agentes & logs", icon: "activity", href: "#agent-timeline" },
-];
-
 function getErrorMessage(error: unknown) {
   if (axios.isAxiosError<ApiError>(error)) {
     return error.response?.data.detail || error.response?.data.agentError || "Não foi possível concluir a ação.";
@@ -103,13 +97,11 @@ function Sidebar({ connected }: { connected: boolean }) {
     <aside className="sidebar">
       <div className="brand-wrap"><img src={operoLogo} alt="Opero" className="brand-logo" /></div>
       <nav className="side-nav" aria-label="Navegação principal">
-        {navItems.map((item) => (
-          <a key={item.label} href={item.href} className={item.active ? "nav-item active" : "nav-item"}>
-            <Icon name={item.icon} size={18} />
-            <span>{item.label}</span>
-            {item.active && <span className="nav-pulse" />}
-          </a>
-        ))}
+        <a href="#workspace" className="nav-item active" aria-current="page" title="Operação do pedido">
+          <Icon name="inbox" size={18} />
+          <span>Operação do pedido</span>
+          <span className="nav-pulse" />
+        </a>
       </nav>
       <div className="sidebar-footer">
         <div className="operator-avatar">PD</div>
@@ -224,7 +216,7 @@ function ChatPanel({ order, events, onIngest, onReply, onIngestAudio, onListen, 
   };
 
   return (
-    <section className="workspace-panel chat-panel" id="conversation">
+    <section className="workspace-panel chat-panel" id="conversation" tabIndex={-1} aria-label="Conversa">
       <div className="panel-header">
         <div className="customer-avatar">MB</div>
         <div className="panel-title"><strong>{order?.customer.name || "Mercado Boa Compra"}</strong><span>{order ? `Conversa #${order.conversationId}` : "Canal de pedidos B2B"}</span></div>
@@ -337,7 +329,7 @@ function OrderPanel({ order, busy, onConfirm, onApprove }: { order: Order | null
   const canApprove = order?.state === "pending_approval";
 
   return (
-    <section className="workspace-panel order-panel" id="structured-order">
+    <section className="workspace-panel order-panel" id="structured-order" tabIndex={-1} aria-label="Pedido estruturado">
       <div className="panel-header order-header">
         <div className="panel-title"><span>Pedido estruturado</span><strong>{order ? `PED-${String(order.id).padStart(5, "0")}` : "Novo pedido"}</strong></div>
         {order && <span className="version-chip">v{version?.versionNumber || 1}</span>}
@@ -446,7 +438,7 @@ function TimelinePanel({ timeline }: { timeline: Timeline | null }) {
       }),
   );
   return (
-    <section className="workspace-panel timeline-panel" id="agent-timeline">
+    <section className="workspace-panel timeline-panel" id="agent-timeline" tabIndex={-1} aria-label="Agentes e logs">
       <div className="panel-header">
         <div className="panel-title"><span>Auditoria em tempo real</span><strong>Runs &amp; Logs</strong></div>
         <span className="live-chip"><i /> AUDITÁVEL</span>
@@ -625,7 +617,7 @@ function App() {
         <Header order={order} connected={health === "ok"} onReset={reset} busy={busy} />
         {error && <div className="error-toast" role="alert"><Icon name="alert-circle" size={17} /><span>{error}</span><button type="button" aria-label="Fechar erro" onClick={() => setError(null)}><Icon name="x" size={16} /></button></div>}
         {busy && <div className="progress-bar" role="progressbar" aria-label="Processando ação"><span /></div>}
-        <div className="workspace-grid">
+        <div className="workspace-grid" id="workspace">
           <ChatPanel order={order} events={messageEvents} onIngest={ingest} onReply={reply} onIngestAudio={ingestAudio} onListen={listen} onVoiceError={setError} voiceReplyUrl={voiceReplyUrl} busy={busy} />
           <OrderPanel order={order} busy={busy} onConfirm={confirm} onApprove={approve} />
           <TimelinePanel timeline={timeline} />

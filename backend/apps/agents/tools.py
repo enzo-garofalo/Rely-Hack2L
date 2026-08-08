@@ -22,6 +22,7 @@ auditoria, o que o projeto não permite.
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -88,12 +89,32 @@ def search_catalog(query: str, *, agent_run: AgentRun) -> list[CatalogMatch]:
     inventar um SKU parecido.
     """
 
-    normalized = query.strip()
-    products = (
-        ErpProduct.objects.filter(active=True)
-        .filter(Q(name__icontains=normalized) | Q(aliases__alias_text__icontains=normalized))
-        .distinct()
-    )
+    # O Intake pode acrescentar qualificadores explicativos ao palpite
+    # (ex.: ``Coca-Cola Zero (provável)``). Primeiro tentamos a frase
+    # limpa; se não houver match, exigimos que cada termo significativo
+    # apareça no nome ou em algum alias do MESMO produto. Isso permite
+    # cruzar "Coca-Cola" do nome com "zero" do alias sem aceitar um SKU
+    # que não existe no catálogo.
+    normalized = re.sub(r"\([^)]*\)", " ", query).strip()
+    active_products = ErpProduct.objects.filter(active=True)
+    products = active_products.filter(
+        Q(name__icontains=normalized) | Q(aliases__alias_text__icontains=normalized)
+    ).distinct()
+
+    if normalized and not products.exists():
+        stop_words = {"a", "ao", "da", "de", "do", "e", "em", "o", "para", "por"}
+        tokens = [
+            token
+            for token in re.findall(r"[\wÀ-ÿ]+", normalized.lower())
+            if len(token) > 1 and token not in stop_words
+        ]
+        products = active_products
+        for token in tokens:
+            products = products.filter(
+                Q(name__icontains=token) | Q(aliases__alias_text__icontains=token)
+            )
+        products = products.distinct()
+
     matches = [CatalogMatch(sku=p.sku, name=p.name, unitLabel=p.unit_label) for p in products]
 
     _log_tool_call(
