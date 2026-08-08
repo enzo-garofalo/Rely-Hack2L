@@ -237,9 +237,22 @@ def _sync_order_items(version: OrderVersion, context: OrderContext) -> None:
 
 
 @transaction.atomic
-def ingest_message(*, customer_id: int, message: str) -> PipelineOutcome:
-    """POST /api/orders/ingest — cria conversa+pedido e dispara o
-    pipeline completo (Intake → Memory → Validation) via Supervisor."""
+def _ingest(
+    *,
+    customer_id: int,
+    message_text: str,
+    channel: str = Message.Channel.TEXT,
+    audio_file=None,
+    transcription: str = "",
+    transcription_confidence: float | None = None,
+) -> PipelineOutcome:
+    """Núcleo comum de `ingest_message` (texto) e `ingest_audio_message`
+    (voz, E9): cria conversa+pedido e dispara o pipeline completo
+    (Intake → Memory → Validation) via Supervisor. Voz e texto convergem
+    aqui de propósito (RF44/CLAUDE.md: "áudio é apenas mais um canal de
+    entrada, não um fluxo paralelo") — a única diferença entre os dois
+    caminhos é o que vai no `Message` (canal, áudio, transcrição); o
+    pipeline em si nunca sabe de onde `message_text` veio."""
 
     customer = Customer.objects.get(pk=customer_id)
     conversation = Conversation.objects.create(customer=customer)
@@ -248,13 +261,46 @@ def ingest_message(*, customer_id: int, message: str) -> PipelineOutcome:
         conversation=conversation,
         order=order,
         sender=Message.Sender.CUSTOMER,
-        content=message,
+        content=message_text,
+        channel=channel,
+        audio_file=audio_file,
+        transcription=transcription,
+        transcription_confidence=transcription_confidence,
     )
 
     context = build_context(order)
-    result = _run_step(_supervisor().receive_message, AgentName.ORDER_INTAKE, context, message)
+    result = _run_step(_supervisor().receive_message, AgentName.ORDER_INTAKE, context, message_text)
     _persist_context(order, context, result)
     return PipelineOutcome(order=order, result=result)
+
+
+def ingest_message(*, customer_id: int, message: str) -> PipelineOutcome:
+    """POST /api/orders/ingest — mensagem de texto."""
+
+    return _ingest(customer_id=customer_id, message_text=message)
+
+
+def ingest_audio_message(
+    *,
+    customer_id: int,
+    audio_file,
+    transcription_text: str,
+    transcription_confidence: float | None = None,
+) -> PipelineOutcome:
+    """POST /api/orders/ingest-audio (E9) — o áudio já foi transcrito por
+    `apps.core.voice.transcribe` antes de chegar aqui; esta função só
+    decide que a transcrição alimenta o mesmo `_ingest` do texto (RF44) e
+    que o áudio original + a transcrição ficam presos ao `Message` como
+    evidência (RF45, complementando RF05)."""
+
+    return _ingest(
+        customer_id=customer_id,
+        message_text=transcription_text,
+        channel=Message.Channel.VOICE,
+        audio_file=audio_file,
+        transcription=transcription_text,
+        transcription_confidence=transcription_confidence,
+    )
 
 
 @transaction.atomic
@@ -357,3 +403,44 @@ def reset_demo() -> None:
 
     call_command("flush", interactive=False)
     call_command("seed")
+
+
+def response_text_for_order(order: Order) -> str:
+    """Texto da "resposta atual" do pedido — pergunta de esclarecimento
+    pendente, ou resumo com itens e total (RF48). Usado por
+    `GET /api/orders/{id}/voice-reply` (E9) como o texto que
+    `apps.core.voice.synthesize` transforma em áudio; também é o texto
+    devolvido quando a síntese falha (RF49: o texto sempre existe, o
+    áudio é que é opcional).
+
+    Função pura e determinística — só formata dados que já passaram pelo
+    Validation Agent (`context.resolvedItems`/`total`, nunca calculados
+    aqui), o mesmo espírito do guardrail #2 do CLAUDE.md aplicado à
+    apresentação, não só ao cálculo."""
+
+    version = order.current_version
+    if version is None:
+        return "Ainda estou processando o seu pedido, um momento."
+
+    context = build_context(order)
+
+    if context.ambiguities:
+        return context.ambiguities[0].ambiguities[0].question
+
+    if context.resolvedItems and context.total is not None:
+        drafts_by_id = {item.id: item for item in context.items}
+        lines = ["Aqui está o resumo do seu pedido."]
+        for resolved in context.resolvedItems:
+            draft = drafts_by_id.get(resolved.itemRef)
+            product = draft.productGuess if draft else resolved.sku
+            quantity = draft.quantity if draft else None
+            quantity_text = f"{quantity:g}" if quantity is not None else "?"
+            lines.append(
+                f"{quantity_text} {resolved.unit} de {product}, a R$ {resolved.unitPrice:.2f} cada."
+            )
+        lines.append(f"Total: R$ {context.total:.2f}.")
+        if order.state == OrderState.READY_FOR_CONFIRMATION.value:
+            lines.append("Posso confirmar o pedido?")
+        return " ".join(lines)
+
+    return "Ainda não há um resumo disponível para este pedido."
