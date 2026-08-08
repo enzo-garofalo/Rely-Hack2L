@@ -45,9 +45,11 @@ class OrderState(str, Enum):
 class CustomerRef:
     """Identificação mínima do cliente dentro do contexto. Só o essencial
     pra rotear e exibir — dados comerciais do cliente (histórico, etc.)
-    vêm de tools, não ficam duplicados aqui."""
+    vêm de tools, não ficam duplicados aqui. `id` é o PK real de
+    `apps.core.models.Customer` — as tools (get_price, get_customer_memory,
+    create_erp_order) usam ele direto em consultas ao banco."""
 
-    id: str
+    id: int
     phone: str
 
 
@@ -83,10 +85,12 @@ class OrderContext:
     que o Supervisor usa para atualizar os campos abaixo — o agente nunca
     edita o OrderContext diretamente."""
 
+    orderId: int  # PK real de apps.core.models.Order que este OrderContext espelha — necessário pra criar AgentRun (FK obrigatória)
     conversationId: str  # id da conversa de origem (WhatsApp) — chave que amarra este pedido à trilha de mensagens no app core
     customer: CustomerRef  # quem está fazendo o pedido
     state: OrderState = OrderState.RECEIVED  # estado atual da máquina do Supervisor
 
+    messageText: str = ""  # texto da mensagem que disparou o `receive_message` atual — é o que o Order Intake estrutura em itens
     deliveryDate: date | None = None  # data de entrega, extraída pelo Intake ou confirmada depois
 
     items: list[OrderItemDraft] = field(default_factory=list)  # itens estruturados (saída do Intake) — rascunho, sem SKU/preço confirmados
@@ -109,3 +113,15 @@ class OrderContext:
         de que orquestração é determinística e mora só no Supervisor."""
 
         self.events.append(OrderEvent(type=type, payload=payload))
+
+    def latest_customer_reply(self, item_ref: str) -> str | None:
+        """Procura, do mais recente pro mais antigo, a última mensagem que
+        o cliente mandou esclarecendo `item_ref` (gravada pelo Supervisor
+        em `customer_reply`, ver orchestrator.py). É assim que o Validation
+        Agent enxerga o que o cliente respondeu ao reprocessar um item —
+        sem precisar de um campo dedicado no contexto pra isso."""
+
+        for event in reversed(self.events):
+            if event.type == "customer_reply" and event.payload.get("itemRef") == item_ref:
+                return event.payload.get("message")
+        return None
