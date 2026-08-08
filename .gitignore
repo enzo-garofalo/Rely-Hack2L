@@ -225,3 +225,7 @@ __marimo__/
 # Node / frontend
 node_modules/
 frontend/dist/
+
+# Sessao do WhatsApp real (E10) - nunca versionar credencial de sessao
+whatsapp-gateway/.wwebjs_auth/
+whatsapp-gateway/.wwebjs_cache/

@@ -28,8 +28,21 @@ class Customer(models.Model):
 class Conversation(models.Model):
     """Uma conversa estilo WhatsApp entre o cliente e o Opero."""
 
+    class Source(models.TextChoices):
+        SIMULATED = "simulated", "Chat simulado"
+        WHATSAPP_WEB = "whatsapp_web", "WhatsApp real (gateway)"
+
     customer = models.ForeignKey(
         Customer, on_delete=models.CASCADE, related_name="conversations"
+    )
+    # Canal de origem da conversa (E10). Só serve pra ROTEAR a resposta ao
+    # cliente: `simulated` responde pela própria API/console (o fallback
+    # obrigatório da demo), `whatsapp_web` responde pelo gateway Node.
+    # O pipeline de agentes nunca lê este campo — a jornada é idêntica nos
+    # dois canais, igual à voz do E9 (CLAUDE.md: "áudio é apenas mais um
+    # canal de entrada"; aqui, WhatsApp real também é).
+    source = models.CharField(
+        max_length=16, choices=Source.choices, default=Source.SIMULATED
     )
     started_at = models.DateTimeField(auto_now_add=True)
 
@@ -47,6 +60,14 @@ class Message(models.Model):
     class Channel(models.TextChoices):
         TEXT = "text", "Texto"
         VOICE = "voice", "Voz"
+
+    class DeliveryStatus(models.TextChoices):
+        # Mensagem que não sai daqui (tudo que o cliente mandou) ou conversa
+        # simulada, onde "entregar" é a própria API devolver o estado.
+        NOT_APPLICABLE = "not_applicable", "Não se aplica"
+        PENDING = "pending", "Aguardando envio"
+        SENT = "sent", "Enviada"
+        FAILED = "failed", "Falha no envio"
 
     conversation = models.ForeignKey(
         Conversation, on_delete=models.CASCADE, related_name="messages"
@@ -66,6 +87,18 @@ class Message(models.Model):
     audio_file = models.FileField(upload_to="messages/audio/", null=True, blank=True)
     transcription = models.TextField(blank=True)
     transcription_confidence = models.FloatField(null=True, blank=True)
+    # Entrega da resposta ao cliente pelo canal real (E10). Existe porque
+    # o gateway pode estar fora do ar na hora da demo: a mensagem que o
+    # sistema decidiu enviar fica registrada de qualquer jeito, e a falha
+    # de transporte aparece na timeline em vez de sumir (guardrail #7 do
+    # CLAUDE.md). Mensagens do cliente e conversas simuladas ficam em
+    # `not_applicable` — nada é enviado por elas.
+    delivery_status = models.CharField(
+        max_length=16,
+        choices=DeliveryStatus.choices,
+        default=DeliveryStatus.NOT_APPLICABLE,
+    )
+    delivery_error = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

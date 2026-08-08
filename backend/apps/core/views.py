@@ -1,3 +1,6 @@
+import hmac
+import logging
+
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -8,9 +11,11 @@ from rest_framework.views import APIView
 
 from apps.agents.schemas import AgentStatus
 
-from . import order_service, voice
+from . import order_service, voice, whatsapp
 from .models import Customer, Order
 from .serializers import serialize_order, serialize_timeline
+
+logger = logging.getLogger(__name__)
 
 
 @api_view(["GET"])
@@ -56,7 +61,7 @@ class OrderDetailView(APIView):
 
     def get(self, request, pk):
         order = get_object_or_404(
-            Order.objects.select_related("customer", "current_version"), pk=pk
+            Order.objects.select_related("customer", "conversation", "current_version"), pk=pk
         )
         return Response(serialize_order(order))
 
@@ -194,6 +199,63 @@ class OrderVoiceReplyView(APIView):
         response = HttpResponse(audio_bytes, content_type="audio/mpeg")
         response["Content-Disposition"] = 'inline; filename="voice-reply.mp3"'
         return response
+
+
+class WhatsAppInboundView(APIView):
+    """POST /api/whatsapp/inbound — mensagem vinda de um celular real,
+    entregue pelo gateway Node (E10, `whatsapp-gateway/`).
+
+    A borda do canal real: recebe `{phone, text}`, autentica o gateway
+    pelo token compartilhado e delega o roteamento pro
+    `order_service.handle_inbound_whatsapp`, que chama exatamente as
+    mesmas funções do chat simulado (ingest / customer-reply / confirm).
+    Não existe pipeline paralelo — o WhatsApp real é só mais um canal de
+    entrada, como a voz no E9.
+
+    Este endpoint é o único caminho de entrada do gateway; os endpoints do
+    console (`/api/orders/...`) seguem intactos e continuam funcionando
+    com o gateway desligado.
+    """
+
+    authentication_classes: list = []
+    permission_classes: list = []
+
+    def post(self, request):
+        token = request.headers.get("X-Gateway-Token", "")
+        if not whatsapp.is_configured() or not hmac.compare_digest(
+            token, whatsapp.WHATSAPP_GATEWAY_TOKEN
+        ):
+            # Sem token configurado o canal real fica desligado por
+            # inteiro: um endpoint aberto criaria pedidos em nome de
+            # qualquer telefone.
+            return Response({"detail": "token do gateway inválido."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        phone = (request.data.get("phone") or "").strip()
+        text = (request.data.get("text") or "").strip()
+        if not phone or not text:
+            return Response(
+                {"detail": "phone e text são obrigatórios."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            outcome = order_service.handle_inbound_whatsapp(phone=phone, text=text)
+        except order_service.UnknownCustomerError as exc:
+            # Telefone desconhecido não vira cliente novo (guardrail #1).
+            logger.warning("WhatsApp inbound recusado: %s", exc)
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except order_service.OrderServiceError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+
+        payload = {
+            "orderId": outcome.order.id,
+            "state": outcome.order.state,
+            "action": outcome.action,
+        }
+        if outcome.result is not None and outcome.result.status != AgentStatus.OK:
+            payload["agentError"] = outcome.result.error
+            return Response(payload, status=status.HTTP_502_BAD_GATEWAY)
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class OrderTimelineView(APIView):

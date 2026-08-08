@@ -92,6 +92,10 @@ def serialize_order(order: Order) -> dict:
         "id": order.id,
         "state": order.state,
         "conversationId": order.conversation_id,
+        # Canal em que a conversa nasceu (E10): `simulated` ou
+        # `whatsapp_web`. A jornada é a mesma nos dois — isto só diz por
+        # onde a resposta ao cliente sai.
+        "source": order.conversation.source,
         "customer": _serialize_customer(order.customer),
         "createdAt": order.created_at.isoformat(),
         "updatedAt": order.updated_at.isoformat(),
@@ -113,6 +117,13 @@ def serialize_timeline(order: Order) -> dict:
             "channel": message.channel,
             "content": message.content,
         }
+        if message.sender == message.Sender.SYSTEM:
+            # E10: pro operador, "o cliente recebeu isso?" é parte da
+            # auditoria. Em conversa simulada é sempre `not_applicable`
+            # (não há transporte externo); no WhatsApp real, uma entrega
+            # que falhou aparece aqui em vez de sumir (guardrail #7).
+            event["deliveryStatus"] = message.delivery_status
+            event["deliveryError"] = message.delivery_error
         if message.channel == message.Channel.VOICE:
             # RF45/RF46: o áudio original fica recuperável (não só
             # guardado), e a confiança da transcrição fica visível pro

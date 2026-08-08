@@ -10,6 +10,7 @@ from apps.core.views import (
     OrderIngestView,
     OrderTimelineView,
     OrderVoiceReplyView,
+    WhatsAppInboundView,
     health,
 )
 
@@ -27,5 +28,7 @@ urlpatterns = [
     path("orders/<int:pk>/approve/", OrderApproveView.as_view(), name="order-approve"),
     path("orders/<int:pk>/timeline/", OrderTimelineView.as_view(), name="order-timeline"),
     path("orders/<int:pk>/voice-reply/", OrderVoiceReplyView.as_view(), name="order-voice-reply"),
+    # Borda do WhatsApp real (E10): só o gateway Node chama esta rota.
+    path("whatsapp/inbound/", WhatsAppInboundView.as_view(), name="whatsapp-inbound"),
     path("demo/reset/", DemoResetView.as_view(), name="demo-reset"),
 ]

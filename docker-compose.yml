@@ -33,6 +33,28 @@ services:
         condition: service_healthy
     command: python manage.py runserver 0.0.0.0:8000
 
+  # WhatsApp real (E10, enhancement). Serviço separado de propósito: o
+  # Chromium do whatsapp-web.js é a parte mais frágil do stack e não pode
+  # levar o backend junto se cair. Nada depende dele — derrubar este
+  # container mantém a jornada simulada 100% funcional, que é a regra de
+  # segurança da demo.
+  whatsapp-gateway:
+    build:
+      context: ./whatsapp-gateway
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      OPERO_API_URL: http://backend:8000/api
+      WHATSAPP_SESSION_PATH: /app/.wwebjs_auth
+    ports:
+      - "${WHATSAPP_GATEWAY_PORT:-3001}:3001"
+    depends_on:
+      - backend
+    volumes:
+      # Sessão do LocalAuth: é o que evita reescanear o QR a cada restart.
+      - opero_wwebjs_auth:/app/.wwebjs_auth
+
   frontend:
     build:
       context: ./frontend
@@ -50,3 +72,4 @@ services:
 
 volumes:
   opero_pgdata:
+  opero_wwebjs_auth:

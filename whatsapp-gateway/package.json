@@ -1,0 +1,18 @@
+{
+  "name": "opero-whatsapp-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ponte entre um WhatsApp real (whatsapp-web.js) e a API do Opero. Só transporte: nao conhece pedido, banco nem regra de negocio.",
+  "main": "index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "5.2.1",
+    "qrcode-terminal": "0.12.0",
+    "whatsapp-web.js": "1.34.7"
+  }
+}
