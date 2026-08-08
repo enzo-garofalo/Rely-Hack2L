@@ -167,6 +167,11 @@ venv.bak/
 # mkdocs documentation
 /site
 
+# Opero — evidência de voz (E9)
+backend/media/
+backend/apps/core/fixtures/voice_fallback/*.mp3
+backend/apps/core/fixtures/voice_fallback/*.txt
+
 # mypy
 .mypy_cache/
 .dmypy.json
@@ -216,3 +221,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Node / frontend
+node_modules/
+frontend/dist/

@@ -1,0 +1,188 @@
+{
+  "info": {
+    "name": "Opero · Auditoria e Reset (E8)",
+    "description": "Prova as duas garantias do E8: (1) POST /api/demo/reset devolve o sistema a um estado IDÊNTICO (mesmos ids, sempre) — RF40/RNF03; (2) GET /api/orders/{id}/timeline consolida mensagens + AgentRun + ToolCall + transições de estado, em ordem cronológica — RF37-39. Rode as pastas em ordem. 'A) Reproducibilidade do Reset' precisa ser executada 2x (Run novamente a mesma pasta) para comparar contra o customer_id salvo na 1ª passada.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000/api" },
+    { "key": "customer_id", "value": "", "description": "Preenchido automaticamente. Na 1ª execução da pasta A, vira a referência; nas seguintes, os testes conferem que continua igual." },
+    { "key": "customer_id_baseline", "value": "", "description": "Guarda o customer_id da 1ª execução, pra comparar contra execuções seguintes." },
+    { "key": "order_id", "value": "" },
+    { "key": "order_id_baseline", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "A) Reprodutibilidade do Reset (rode esta pasta 2x seguidas)",
+      "item": [
+        {
+          "name": "A1. POST Demo Reset",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{base_url}}/demo/reset/", "host": ["{{base_url}}"], "path": ["demo", "reset", ""] },
+            "description": "RF40: trunca as tabelas voláteis (via `flush`, que reinicia as sequences de PK — RESTART IDENTITY) e roda o seed de novo. Sem o RESTART IDENTITY, cada reset deslocaria os ids pra cima e o sistema nunca voltaria a um estado 'idêntico' — só a 'mesmos dados, ids diferentes'."
+          }
+        },
+        {
+          "name": "A2. GET Admin (descobre o 1º customer_id)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Não há endpoint de listagem de clientes na Order API — usamos o admin do Django.",
+                  "// Se preferir, troque esta request por uma consulta manual (ver passo a passo)."
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "http://localhost:8000/admin/core/customer/", "host": ["localhost:8000"], "path": ["admin", "core", "customer", ""] },
+            "description": "Abra esta URL no navegador (precisa de um superuser criado com `createsuperuser`) para achar o customer_id mais baixo — ou rode a consulta via `manage.py shell` do passo a passo. Cole o id encontrado na variável 'customer_id' da collection."
+          }
+        },
+        {
+          "name": "A3. POST Ingest (usa {{customer_id}})",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('order_id', body.orderId);",
+                  "",
+                  "const baseline = pm.collectionVariables.get('order_id_baseline');",
+                  "if (!baseline) {",
+                  "    pm.collectionVariables.set('order_id_baseline', body.orderId);",
+                  "    console.log('1ª execução: order_id_baseline =', body.orderId);",
+                  "} else {",
+                  "    pm.test('order_id é idêntico ao da 1ª execução (reset reprodutível)', function () {",
+                  "        pm.expect(String(body.orderId)).to.eql(String(baseline));",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": {{customer_id}},\n  \"message\": \"10 cx de coca 2L\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/orders/ingest/", "host": ["{{base_url}}"], "path": ["orders", "ingest", ""] },
+            "description": "Rode a pasta A inteira uma 1ª vez (define a baseline), depois rode de novo do zero (A1 -> A3): se o reset for de fato reprodutível, orderId volta a ser exatamente o mesmo número. O 'agentError' 502 é esperado se FEATHERLESS_API_KEY/MODEL_* não estiverem configurados — não afeta o teste de reprodutibilidade, que olha só o id."
+          }
+        }
+      ]
+    },
+    {
+      "name": "B) Timeline consolidada (AgentRun + ToolCall + transições)",
+      "item": [
+        {
+          "name": "B1. POST Demo Reset",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{base_url}}/demo/reset/", "host": ["{{base_url}}"], "path": ["demo", "reset", ""] }
+          }
+        },
+        {
+          "name": "B2. POST Ingest",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('order_id', body.orderId);",
+                  "pm.test('devolve orderId', function () { pm.expect(body.orderId).to.be.a('number'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": {{customer_id}},\n  \"message\": \"10 cx de coca 2L, 6 fardos da zero\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/orders/ingest/", "host": ["{{base_url}}"], "path": ["orders", "ingest", ""] },
+            "description": "Ajuste customer_id antes de rodar (ver pasta A ou o passo a passo)."
+          }
+        },
+        {
+          "name": "B3. GET Timeline",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('events existe e não está vazio', function () {",
+                  "    pm.expect(body.events).to.be.an('array').that.is.not.empty;",
+                  "});",
+                  "",
+                  "pm.test('events está em ordem cronológica ascendente', function () {",
+                  "    const times = body.events.map(e => new Date(e.at).getTime());",
+                  "    const sorted = [...times].sort((a, b) => a - b);",
+                  "    pm.expect(times).to.eql(sorted);",
+                  "});",
+                  "",
+                  "pm.test('tem pelo menos um evento de mensagem', function () {",
+                  "    pm.expect(body.events.some(e => e.type === 'message')).to.be.true;",
+                  "});",
+                  "",
+                  "pm.test('tem pelo menos um agent_run (Order Intake, no mínimo)', function () {",
+                  "    pm.expect(body.events.some(e => e.type === 'agent_run')).to.be.true;",
+                  "});",
+                  "",
+                  "pm.test('todo agent_run traz toolCalls (mesmo que vazio) e reason', function () {",
+                  "    const runs = body.events.filter(e => e.type === 'agent_run');",
+                  "    runs.forEach(r => {",
+                  "        pm.expect(r).to.have.property('toolCalls').that.is.an('array');",
+                  "        pm.expect(r).to.have.property('reason');",
+                  "        pm.expect(r).to.have.property('success');",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/orders/{{order_id}}/timeline/", "host": ["{{base_url}}"], "path": ["orders", "{{order_id}}", "timeline", ""] },
+            "description": "Com FEATHERLESS_API_KEY/MODEL_* configurados, siga a jornada completa (ver 'Opero · Order API (E7)') e rode este GET de novo no final: a timeline mostra os 4 agentes (order_intake, operational_memory, validation, erp_execution), cada um com seus toolCalls, mais os eventos 'state_transition' explícitos e as confirmações/aprovações — a colaboração ponta a ponta."
+          }
+        }
+      ]
+    },
+    {
+      "name": "C) Sanitização básica de logs (verificação manual)",
+      "item": [
+        {
+          "name": "C1. GET Timeline (procure por segredos na resposta)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/orders/{{order_id}}/timeline/", "host": ["{{base_url}}"], "path": ["orders", "{{order_id}}", "timeline", ""] },
+            "description": "Verificação manual (Postman não tem acesso às env vars do backend pra comparar): abra o corpo da resposta e confirme que nenhum campo (reason, toolCalls[].input/output/error) contém o valor de FEATHERLESS_API_KEY/ERP_API_KEY/ELEVENLABS_API_KEY do backend/.env. Se algum desses valores aparecer nos logs, `apps/agents/sanitize.py` substitui por '***REDACTED***' antes de gravar em AgentRun/ToolCall — este request só serve pra inspecionar visualmente."
+          }
+        }
+      ]
+    }
+  ]
+}

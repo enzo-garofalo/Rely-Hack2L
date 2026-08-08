@@ -1,0 +1,117 @@
+{
+  "info": {
+    "name": "Opero · ERP Simulator (E4)",
+    "description": "Endpoints do ERP simulado: contexto do cliente (catálogo/preço/estoque), criação de pedido com idempotência e consulta do pedido. Todos exigem o header X-API-Key. POST /orders exige também Idempotency-Key.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000/api/erp" },
+    { "key": "api_key", "value": "dev-erp-api-key" },
+    { "key": "customer_id", "value": "8", "description": "Troque pelo id retornado em GET /api/erp/context/{id} ou consultado via manage.py shell" },
+    { "key": "idempotency_key", "value": "demo-key-1", "description": "Troque para gerar um pedido novo; repita para testar idempotência" },
+    { "key": "order_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "GET Context (cliente + catálogo + preço + estoque)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "X-API-Key", "value": "{{api_key}}" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/context/{{customer_id}}/",
+          "host": ["{{base_url}}"],
+          "path": ["context", "{{customer_id}}", ""]
+        }
+      }
+    },
+    {
+      "name": "POST Order (criar pedido — idempotente)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Salva o id retornado para usar na request GET Order",
+              "if (pm.response.code === 201 || pm.response.code === 200) {",
+              "    const body = pm.response.json();",
+              "    pm.collectionVariables.set('order_id', body.id);",
+              "}",
+              "pm.test('Status é 200 (repetido) ou 201 (novo)', function () {",
+              "    pm.expect([200, 201]).to.include(pm.response.code);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-API-Key", "value": "{{api_key}}" },
+          { "key": "Idempotency-Key", "value": "{{idempotency_key}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customer\": {{customer_id}},\n  \"items\": [\n    { \"sku\": \"CERV-PILSEN-350\", \"quantity\": 10, \"unit_price\": 54.0, \"subtotal\": 540.0 }\n  ],\n  \"total\": 540.0\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{base_url}}/orders/",
+          "host": ["{{base_url}}"],
+          "path": ["orders", ""]
+        },
+        "description": "Envie 2x seguidas sem mudar o Idempotency-Key: a 1ª volta 201, a 2ª volta 200 com o mesmo id/external_order_number (nenhum pedido duplicado). Troque idempotency_key para criar um pedido novo."
+      }
+    },
+    {
+      "name": "GET Order (recibo do pedido)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "X-API-Key", "value": "{{api_key}}" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/orders/{{order_id}}/",
+          "host": ["{{base_url}}"],
+          "path": ["orders", "{{order_id}}", ""]
+        },
+        "description": "order_id é preenchido automaticamente pelo test script da request POST Order."
+      }
+    },
+    {
+      "name": "GET Context sem API key (esperado 403)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/context/{{customer_id}}/",
+          "host": ["{{base_url}}"],
+          "path": ["context", "{{customer_id}}", ""]
+        }
+      }
+    },
+    {
+      "name": "POST Order sem Idempotency-Key (esperado 400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-API-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customer\": {{customer_id}},\n  \"items\": [\n    { \"sku\": \"CERV-PILSEN-350\", \"quantity\": 10, \"unit_price\": 54.0 }\n  ],\n  \"total\": 540.0\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{base_url}}/orders/",
+          "host": ["{{base_url}}"],
+          "path": ["orders", ""]
+        }
+      }
+    }
+  ]
+}
