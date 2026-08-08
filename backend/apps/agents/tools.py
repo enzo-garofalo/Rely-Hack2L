@@ -225,8 +225,8 @@ class RecentErpOrderRecord:
 @dataclass
 class CustomerMemorySnapshot:
     """Dado histórico cru sobre o cliente. Interpretar isso em hints com
-    confiança/evidência (schemas.MemoryHint) é trabalho do Memory Agent
-    (LLM) — esta tool só busca no banco, nunca decide o que sugerir."""
+    confiança/evidência (schemas.MemoryHint) é trabalho do Memory Agent —
+    esta tool só busca no banco, nunca decide o que sugerir."""
 
     aliases: list[MemoryAliasRecord]
     preferences: list[MemoryPreferenceRecord]

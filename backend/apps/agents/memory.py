@@ -13,27 +13,86 @@ afirma. Aprendizado nunca é automático.
 
 from __future__ import annotations
 
-import json
 import logging
-from dataclasses import asdict
+import re
+import unicodedata
 
 from . import audit, tools
 from .context import OrderContext
-from .schemas import AgentName, AgentResult, AgentStatus, MemoryContext, MemoryProposal
-from .llm_client import LLMOutputError, call_structured
+from .schemas import (
+    AgentName,
+    AgentResult,
+    AgentStatus,
+    MemoryContext,
+    MemoryHint,
+    MemoryHintSuggestion,
+    MemoryPreference,
+    MemoryProposal,
+)
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM_PROMPT = (
-    "Você é um consultor de memória para um sistema de pedidos B2B. Recebe os "
-    "itens do pedido atual e o histórico real do cliente (aliases confirmados, "
-    "preferências, pedidos recentes no ERP). Para cada item atual que pode se "
-    "beneficiar do histórico, gere um hint com o campo sugerido, o valor, uma "
-    "confiança de 0 a 1 e a evidência exata que sustenta a sugestão. NUNCA "
-    "sugira um SKU que não apareça no histórico fornecido — você não tem acesso "
-    "ao catálogo, só está lembrando o que já foi visto antes. Se nada do "
-    "histórico ajuda, devolva hints e preferences vazios."
-)
+def _normalize(value: str) -> str:
+    """Normaliza apenas para comparar aliases aprovados com a fala atual."""
+
+    without_accents = "".join(
+        char
+        for char in unicodedata.normalize("NFKD", value.lower())
+        if not unicodedata.combining(char)
+    )
+    return " ".join(re.findall(r"[a-z0-9]+", without_accents))
+
+
+def _contains_phrase(text: str, phrase: str) -> bool:
+    return bool(phrase) and f" {phrase} " in f" {text} "
+
+
+def _recall_from_approved_memory(
+    context: OrderContext,
+    snapshot: tools.CustomerMemorySnapshot,
+) -> MemoryContext:
+    """Transforma memória já aprovada em sugestões sem inferência remota.
+
+    Um alias só gera hint quando aparece literalmente (após normalização)
+    no item atual. Se aliases compatíveis apontarem para SKUs diferentes,
+    não escolhemos nenhum: o Validation fará o esclarecimento normal.
+    """
+
+    hints: list[MemoryHint] = []
+    for item in context.items:
+        current_text = _normalize(f"{item.rawText} {item.productGuess}")
+        matching_aliases = [
+            alias
+            for alias in snapshot.aliases
+            if alias.sku and _contains_phrase(current_text, _normalize(alias.productHint))
+        ]
+        matching_skus = {alias.sku for alias in matching_aliases}
+        if len(matching_skus) != 1:
+            continue
+
+        strongest_alias = max(matching_aliases, key=lambda alias: len(_normalize(alias.productHint)))
+        hints.append(
+            MemoryHint(
+                itemRef=item.id,
+                type="alias_resolution",
+                suggests=MemoryHintSuggestion(field="sku", value=strongest_alias.sku),
+                confidence=0.98,
+                evidence=(
+                    f'Alias aprovado no histórico: "{strongest_alias.productHint}" '
+                    f"→ {strongest_alias.sku}."
+                ),
+            )
+        )
+
+    preferences = [
+        MemoryPreference(
+            type=preference.key,
+            value=preference.value,
+            evidence=f'Preferência aprovada no histórico: "{preference.key}" = "{preference.value}".',
+        )
+        for preference in snapshot.preferences
+    ]
+    return MemoryContext(hints=hints, preferences=preferences)
 
 
 def run(context: OrderContext) -> AgentResult:
@@ -45,47 +104,7 @@ def run(context: OrderContext) -> AgentResult:
 
     snapshot = tools.get_customer_memory(context.customer.id, agent_run=agent_run)
 
-    if not snapshot.aliases and not snapshot.preferences and not snapshot.recentOrders:
-        # Recall é opcional por definição (AGENTS_PLAN.md): sem histórico
-        # nenhum, nem vale chamar o modelo — devolve vazio e segue.
-        result = AgentResult(agent=AgentName.OPERATIONAL_MEMORY, status=AgentStatus.OK, data=MemoryContext())
-        audit.finish_agent_run(agent_run, next_state=context.state.value, result=result)
-        return result
-
-    user_payload = {
-        "currentItems": [
-            {"id": item.id, "productGuess": item.productGuess, "rawText": item.rawText}
-            for item in context.items
-        ],
-        "history": {
-            "aliases": [asdict(a) for a in snapshot.aliases],
-            "preferences": [asdict(p) for p in snapshot.preferences],
-            "recentOrders": [
-                {"externalOrderNumber": o.externalOrderNumber, "items": o.items, "createdAt": o.createdAt.isoformat()}
-                for o in snapshot.recentOrders
-            ],
-        },
-    }
-
-    messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
-    ]
-
-    try:
-        memory_context = call_structured(
-            agent=AgentName.OPERATIONAL_MEMORY,
-            messages=messages,
-            output_schema=MemoryContext,
-        )
-    except (LLMOutputError, RuntimeError) as exc:
-        # RuntimeError também: config de LLM incompleta (ver intake.py) não
-        # pode deixar este AgentRun aberto — recall é opcional pro fluxo,
-        # mas a auditoria da tentativa não é.
-        result = AgentResult(agent=AgentName.OPERATIONAL_MEMORY, status=AgentStatus.ERROR, error=str(exc))
-        audit.finish_agent_run(agent_run, next_state=context.state.value, result=result)
-        return result
-
+    memory_context = _recall_from_approved_memory(context, snapshot)
     result = AgentResult(agent=AgentName.OPERATIONAL_MEMORY, status=AgentStatus.OK, data=memory_context)
     audit.finish_agent_run(agent_run, next_state="validating", result=result)
     return result
